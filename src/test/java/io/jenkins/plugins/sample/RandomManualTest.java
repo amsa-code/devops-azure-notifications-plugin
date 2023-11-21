@@ -16,7 +16,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.JenkinsRule;
 
-public class HelloWorldBuilderTest {
+public class RandomManualTest {
 
     @Rule
     public JenkinsRule jenkins = new JenkinsRule();
