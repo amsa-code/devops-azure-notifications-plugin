@@ -6,6 +6,7 @@ import hudson.model.Result;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.security.ACL;
+import java.io.Serializable;
 import java.util.List;
 import java.util.Optional;
 import jenkins.model.Jenkins;
@@ -22,7 +23,8 @@ import org.jenkinsci.plugins.plaincredentials.StringCredentials;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.SynchronousNonBlockingStepExecution;
 
-public class AzureDevopsNotificationStepExecution extends SynchronousNonBlockingStepExecution<Void> {
+public class AzureDevopsNotificationStepExecution extends SynchronousNonBlockingStepExecution<Void>
+        implements Serializable {
 
     private AzureDevopsNotificationStep azureDevopsNotificationStep;
 
@@ -39,11 +41,21 @@ public class AzureDevopsNotificationStepExecution extends SynchronousNonBlocking
         TaskListener taskListener = getContext().get(TaskListener.class);
 
         String credentialsId = azureDevopsNotificationStep.getCredentialsId();
-        String personalAccessToken = CredentialsMatchers.firstOrNull(
-                        CredentialsProvider.lookupCredentials(StringCredentials.class, Jenkins.get(), ACL.SYSTEM),
-                        CredentialsMatchers.withId(credentialsId))
-                .getSecret()
-                .getPlainText();
+        if (credentialsId == null) {
+            taskListener.getLogger().println("credentialsId cannot be null");
+            return null;
+        }
+
+        StringCredentials stringCredentials = CredentialsMatchers.firstOrNull(
+                CredentialsProvider.lookupCredentials(StringCredentials.class, Jenkins.get(), ACL.SYSTEM),
+                CredentialsMatchers.withId(credentialsId));
+
+        if (stringCredentials == null) {
+            taskListener.getLogger().println("Cannot find any credentials for id:" + credentialsId);
+            return null;
+        }
+
+        String personalAccessToken = stringCredentials.getSecret().getPlainText();
 
         var webApi = new AzDClientApi(
                 azureDevopsNotificationStep.getOrganizationName(),
@@ -73,8 +85,7 @@ public class AzureDevopsNotificationStepExecution extends SynchronousNonBlocking
 
         GitRepository gitRepository = gitApi.getRepository(azureDevopsNotificationStep.getRepositoryName());
 
-        String buildUrl =
-                run.getEnvironment(getContext().get(TaskListener.class)).get("BUILD_URL");
+        // String buildUrl = run.getEnvironment(getContext().get(TaskListener.class)).get("BUILD_URL");
 
         Result result = run.getResult();
 
@@ -87,17 +98,19 @@ public class AzureDevopsNotificationStepExecution extends SynchronousNonBlocking
             }
         });
 
-        if (result.isBetterOrEqualTo(Result.SUCCESS)) {
-            gitPullRequestStatus.setState(GitStatusState.SUCCEEDED);
-        } else {
-            gitPullRequestStatus.setState(GitStatusState.FAILED);
+        if (result != null) {
+            if (result.isBetterOrEqualTo(Result.SUCCESS)) {
+                gitPullRequestStatus.setState(GitStatusState.SUCCEEDED);
+            } else {
+                gitPullRequestStatus.setState(GitStatusState.FAILED);
+            }
+            gitApi.createPullRequestStatus(optPr.get().getPullRequestId(), gitRepository.getId(), gitPullRequestStatus);
+            // TODO add a comment with build only if result changes or first build
+            //            if (run.getPreviousBuild() == null || !result.equals(run.getPreviousBuild().getResult())) {
+            //
+            //            }
         }
-        gitApi.createPullRequestStatus(optPr.get().getPullRequestId(), gitRepository.getId(), gitPullRequestStatus);
-        if (run.getPreviousBuild() == null
-                || !result.equals(run.getPreviousBuild().getResult())) {
-            // add a comment with build only if result changes or first build
 
-        }
         return null;
     }
 }
