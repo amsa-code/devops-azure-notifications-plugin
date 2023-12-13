@@ -70,12 +70,20 @@ public class AzureDevopsNotificationStepExecution extends SynchronousNonBlocking
             return null;
         }
 
+        taskListener.getLogger().println("Check branch " + branchName);
+
         GitApi gitApi = webApi.getGitApi();
         PullRequests pullRequestsResult = gitApi.getPullRequests(azureDevopsNotificationStep.getRepositoryName());
         List<GitPullRequest> pullRequests = pullRequestsResult.getPullRequests();
 
         Optional<GitPullRequest> optPr = pullRequests.stream()
-                .filter(pr -> pr.getSourceRefName().contains(branchName))
+                .filter(pr -> {
+                    String sourceRefName = pr.getSourceRefName();
+                    taskListener
+                            .getLogger()
+                            .println("checking branch name " + branchName + " with PR sourceRefName " + sourceRefName);
+                    return StringUtils.endsWith(sourceRefName, "/" + branchName);
+                })
                 .findFirst();
 
         if (optPr.isEmpty()) {
@@ -104,6 +112,10 @@ public class AzureDevopsNotificationStepExecution extends SynchronousNonBlocking
             } else {
                 gitPullRequestStatus.setState(GitStatusState.FAILED);
             }
+            taskListener
+                    .getLogger()
+                    .println("will mark PR " + optPr.get().getPullRequestId() + " with status "
+                            + gitPullRequestStatus.getState());
             gitApi.createPullRequestStatus(optPr.get().getPullRequestId(), gitRepository.getId(), gitPullRequestStatus);
             // TODO add a comment with build only if result changes or first build
             //            if (run.getPreviousBuild() == null || !result.equals(run.getPreviousBuild().getResult())) {
